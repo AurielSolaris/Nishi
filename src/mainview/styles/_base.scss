@@ -1,0 +1,86 @@
+// Reset and app-level layout scaffolding.
+
+@use "tokens" as *;
+
+* {
+  box-sizing: border-box;
+}
+
+// The UA stylesheet's [hidden] { display: none } loses to any author rule that
+// sets display — .editor sets display: flex, so without this the editor stays
+// painted over the welcome screen with nothing open.
+[hidden] {
+  display: none !important;
+}
+
+// Inline <symbol> definitions; never rendered directly.
+.sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: c("bg");
+  color: c("text");
+  font: 13px/1.5 c("font-ui");
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: m("titlebar-h") 1fr;
+  height: 100vh;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: m("activitybar-w") m("sidebar-w") 1fr;
+  min-height: 0;
+
+  // Ctrl+B hides the sidebar; the column goes with it.
+  &--no-sidebar {
+    grid-template-columns: m("activitybar-w") 1fr;
+  }
+}
+
+kbd {
+  font: 11px c("font-mono");
+  background: c("bg-elevated");
+  border: 1px solid c("border");
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: c("text");
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: c("text-dim");
+  flex: none;
+
+  &.is-live {
+    background: c("success");
+    box-shadow: 0 0 6px rgba(63, 185, 80, 0.7);
+  }
+}
+
+.pill {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  color: c("accent");
+  background: c("accent-soft");
+  border-radius: 999px;
+  padding: 2px 9px;
+}

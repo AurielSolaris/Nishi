@@ -1,0 +1,87 @@
+// Icon system.
+//
+// Icons are inlined <symbol>s (see scripts/build-sprite.ts) referenced through
+// <use>. Lucide strokes use currentColor, so an icon takes the colour of
+// whatever it sits in and themes itself for free in Stage 3.
+
+@use "tokens" as *;
+
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  display: block;
+  // Lucide's 24px grid at a 16px box needs a slightly thinner stroke to keep
+  // the same visual weight as the surrounding text.
+  stroke-width: 1.75;
+
+  &--sm {
+    width: 12px;
+    height: 12px;
+    stroke-width: 2;
+  }
+}
+
+// Activity bar icons sit a little larger than inline ones.
+.ab .icon {
+  width: 18px;
+  height: 18px;
+}
+
+.tab__icon {
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+}
+
+.tab.is-active .tab__icon {
+  opacity: 1;
+}
+
+.pane__action .icon,
+.tab__close .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.panel__actions .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.tree {
+  &__chevron {
+    flex: none;
+    width: 13px;
+    height: 13px;
+    color: c("text-dim");
+    stroke-width: 2.25;
+
+    // Keeps file names aligned with folder names.
+    &--spacer {
+      display: block;
+    }
+  }
+
+  &__icon {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: c("text-dim");
+    stroke-width: 1.75;
+
+    &--dir {
+      color: c("accent");
+    }
+  }
+}
+
+.findbar {
+  &__opts .icon,
+  &__nav .icon,
+  &__toggle .icon {
+    width: 14px;
+    height: 14px;
+    margin: 0 auto;
+  }
+}

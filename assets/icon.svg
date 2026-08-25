@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="512" height="512" role="img" aria-label="Nishi">
+  <title>Nishi</title>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141D38"/>
+      <stop offset="1" stop-color="#080C1A"/>
+    </linearGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7FB3FF"/>
+      <stop offset="1" stop-color="#3D7BEB"/>
+    </linearGradient>
+    <linearGradient id="star" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE889"/>
+      <stop offset="1" stop-color="#FFC93A"/>
+    </linearGradient>
+    <mask id="crescent">
+      <circle cx="50" cy="50.5" r="31.5" fill="#fff"/>
+      <circle cx="63.5" cy="39.5" r="28.5" fill="#000"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" rx="21.5" fill="url(#sky)"/>
+  <circle cx="50" cy="50.5" r="31.5" fill="url(#moon)" mask="url(#crescent)"/>
+  <path d="M80 12.5 L81.763 17.573 L87.133 17.682 L82.853 20.927 L84.408 26.068 L80 23 L75.592 26.068 L77.147 20.927 L72.867 17.682 L78.237 17.573 Z" fill="url(#star)"/>
+  <path d="M26.283 15.115 L26.225 18.838 L29.697 20.186 L26.138 21.282 L25.929 25 L23.787 21.954 L20.186 22.904 L22.421 19.925 L20.405 16.795 L23.929 18 Z" fill="url(#star)"/>
+  <path d="M86.606 50.09 L88.248 52.863 L91.418 52.287 L89.288 54.705 L90.816 57.543 L87.858 56.264 L85.631 58.593 L85.933 55.385 L83.029 53.987 L86.174 53.283 Z" fill="url(#star)"/>
+  <path d="M74.367 78.765 L75.129 82.848 L79.222 83.552 L75.575 85.539 L76.17 89.649 L73.153 86.794 L69.428 88.63 L71.211 84.879 L68.314 81.904 L72.432 82.44 Z" fill="url(#star)"/>
+  <path d="M14.377 62.37 L15.99 64.561 L18.606 63.81 L17.02 66.022 L18.542 68.277 L15.949 67.452 L14.275 69.597 L14.258 66.876 L11.7 65.946 L14.283 65.089 Z" fill="url(#star)"/>
+  <path d="M40.596 8.56 L40.884 10.689 L42.98 11.158 L41.045 12.09 L41.246 14.229 L39.762 12.676 L37.79 13.528 L38.808 11.637 L37.388 10.025 L39.502 10.408 Z" fill="url(#star)"/>
+</svg>

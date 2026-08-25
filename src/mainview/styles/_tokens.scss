@@ -1,0 +1,71 @@
+// Design tokens.
+//
+// Two layers on purpose:
+//   - SCSS maps  → build-time structure, iteration, and the metrics we need in
+//                  calc()/grid templates.
+//   - CSS custom properties → runtime-swappable, which is what Stage 3's theme
+//                  system (Catppuccin / Rose Pine / Dracula) needs.
+//
+// Keep the color values in step with PALETTE in src/core/branding.ts.
+
+@use "sass:map";
+
+$colors: (
+  "bg": #0f1420,
+  "bg-elevated": #161c2b,
+  "bg-sunken": #0b0f19,
+  "border": #242d42,
+  "text": #c7d1e4,
+  "text-dim": #7a879f,
+  "text-bright": #eaf0fb,
+  "accent": #4c8dff,
+  "accent-soft": rgba(76, 141, 255, 0.14),
+  "star": #ffc93a,
+  "success": #3fb950,
+  "danger": #ff5f57,
+);
+
+$metrics: (
+  "titlebar-h": 36px,
+  "tabbar-h": 36px,
+  "statusbar-h": 24px,
+  "activitybar-w": 48px,
+  "sidebar-w": 248px,
+);
+
+$fonts: (
+  "ui": (
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif,
+  ),
+  "mono": (
+    "Cascadia Code",
+    "JetBrains Mono",
+    Consolas,
+    "Courier New",
+    monospace,
+  ),
+);
+
+/// Read a token as a CSS custom property, so themes can override it at runtime.
+@function c($name) {
+  @return var(--#{$name});
+}
+
+@function m($name) {
+  @return map.get($metrics, $name);
+}
+
+:root {
+  @each $name, $value in $colors {
+    --#{$name}: #{$value};
+  }
+  @each $name, $value in $metrics {
+    --#{$name}: #{$value};
+  }
+  @each $name, $stack in $fonts {
+    --font-#{$name}: #{$stack};
+  }
+}

@@ -1,0 +1,4 @@
+# SCSS is compiled by our own loader (scripts/sass-plugin.ts) so that
+# index.html can link .scss directly. See PLAN.MD, decision D4.
+[serve.static]
+plugins = ["./scripts/sass-plugin.ts"]
