@@ -1,0 +1,15 @@
+// Nishi shell styles — Stage 0.
+//
+// Compiled to src/mainview/index.css by `bun run styles` (that output is
+// generated and gitignored). SCSS, not Tailwind: if we are going to write the
+// classes anyway, they may as well be our own.
+//
+// Stage 3 turns _tokens.scss into the theme system's substrate.
+
+@use "tokens";
+@use "base";
+@use "chrome";
+@use "editor";
+@use "icons";
+@use "panels";
+@use "find";

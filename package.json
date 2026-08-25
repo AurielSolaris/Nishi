@@ -1,0 +1,38 @@
+{
+  "name": "nishi",
+  "version": "0.2.1",
+  "type": "module",
+  "private": true,
+  "description": "A modern resurrection of Atom - a lightweight, hackable editor on Electrobun + Bun.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "bun run scripts/dev-server.ts",
+    "desktop": "bun run scripts/hutch.ts electrobun dev",
+    "desktop:watch": "bun run scripts/hutch.ts electrobun dev --watch",
+    "desktop:prepare": "bun run scripts/hutch.ts electrobun prepare",
+    "desktop:build": "bun run scripts/hutch.ts electrobun build --env=dev",
+    "desktop:run": "bun run scripts/hutch.ts electrobun run --env=dev",
+    "desktop:sync": "bun run scripts/hutch.ts electrobun sync",
+    "desktop:update": "bun run scripts/hutch.ts electrobun update",
+    "build": "bun run scripts/hutch.ts electrobun build --env=stable",
+    "build:canary": "bun run scripts/hutch.ts electrobun build --env=canary",
+    "icon": "bun run scripts/gen-icon.ts",
+    "sprite": "bun run scripts/build-sprite.ts",
+    "assets": "bun run scripts/gen-icon.ts && bun run scripts/build-sprite.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test",
+    "clean": "bun run scripts/clean.ts"
+  },
+  "devDependencies": {
+    "@types/alpinejs": "^3.13.11",
+    "@types/bun": "latest",
+    "electrobun": "2.0.1",
+    "lucide-static": "^1.34.0",
+    "sass": "^1.103.1",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "alpinejs": "^3.16.3"
+  }
+}
