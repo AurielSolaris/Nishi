@@ -9,8 +9,10 @@ Nishi is a modern resurrection of Atom: a lightweight, hackable editor built
 around a safer extension model, modern runtime choices, and a user-controlled
 ecosystem.
 
-Status markers below point at where each idea lands on the roadmap. Nothing
-here is implemented yet beyond the stubs noted in "Current status".
+Status markers below point at where each idea lands on the roadmap. Most of it
+is still design intent; the exceptions are the virtual filesystem and the
+document cache, which shipped in v0.3.0 and are marked as such. "Current status"
+at the bottom is the authoritative list.
 
 ---
 
@@ -105,21 +107,50 @@ sandbox from being bypassable by a permission bug.
 
 ### Virtualized environment
 
-**Filesystem.** Extensions interact with a Virtual Filesystem.
+**Filesystem — shipped in v0.3.0, for the editor as well as for extensions.**
+
+The original plan put a VFS between extensions and the disk. Nishi went further
+and put the **editor itself** behind the same boundary, because a boundary only
+guests use is a boundary nobody tests — and because it makes the extension VFS a
+consumer of one implementation rather than a second implementation of the same
+idea, which is where filesystem sandboxes usually fail.
 
 ```
-Extension
-    |
-    v
-Nishi VFS
-    |
-    +--> Real file access
-    |
-    +--> Virtual response
+Editor UI                     Extension  (Stage 4)
+    |                             |
+    | nishi://workspace/src/a.ts  | capability-checked subset
+    v                             v
+              Nishi VFS  (src/host/vfs.ts)
+                   |
+                   +--> mount table + capabilities
+                   +--> canonical containment (realpath)
+                   |
+                   +--> Real file access
+                   +--> Virtual response  (Stage 4)
 ```
 
-Extensions do not directly see user home paths, private files, OS layout, or
-hidden system data.
+Files are named by mount, never by path:
+
+```
+nishi://workspace/src/core/buffer.ts
+```
+
+No drive letters, no UNC roots, no `~`, no backslashes, no `..`. The editor does
+not see user home paths, OS layout or hidden system data — not because it is
+forbidden to ask, but because there is no syntax in which to ask. The one
+privileged operation is mounting a folder, which is the user's explicit "open
+folder" gesture and carries exactly the authority a native picker would.
+
+Containment is canonical, not lexical: every mapping resolves the deepest
+existing ancestor with `realpath` and re-checks against the mount's own realpath,
+so a symlink inside the workspace pointing at `~/.ssh` does not resolve. Names
+that mean something other than they look like are rejected everywhere, not only
+on the platform where they bite — NTFS alternate data streams (`notes.txt:hidden`),
+Windows device names (`CON`, `LPT1.txt`), trailing dots and spaces.
+
+Extensions in Stage 4 narrow this surface rather than replacing it: same path
+handling, same containment, plus per-extension mounts and virtualized responses
+for the capabilities they were not granted.
 
 **Network.** Network access is abstracted. The extension does not directly
 control raw sockets, DNS identity, or local network information. Nishi can
@@ -129,6 +160,12 @@ networking.
 **Environment.** Sensitive information — username, hostname, platform details,
 environment variables — is abstracted. Extensions receive the Nishi environment
 instead of unrestricted system information.
+
+A first slice of this shipped with the VFS in v0.3.0 and applies to the editor:
+the view is never told the workspace's absolute path. It gets a mount URI, a
+folder label, and a display string with the home directory elided
+(`~/Code/nishi`), so the username stays out of the DOM, out of window titles and
+out of screenshots.
 
 ### Built-in extensions
 
@@ -183,10 +220,12 @@ Nishi aims to maintain a smaller memory footprint through efficient allocation
 patterns, reduced unnecessary object creation, better lifecycle management, and
 extension isolation.
 
-### Document cache system
+### Document cache system — shipped in v0.3.0, completed in v0.3.1
 
-Nishi uses an active/cold document model. Recently used files stay in memory;
-unused files may be unloaded after inactivity.
+Nishi uses an active/cold document model. A file left untouched for **30
+minutes** has its contents released; the tab, cursor and scroll position stay,
+and the text is read back from disk the moment the file is focused or viewed
+again. The timeout and the ceiling on loaded files are both settings.
 
 ```
 Opened File
@@ -206,6 +245,30 @@ The system preserves cursor position, file state, and workspace information
 while reducing memory usage. **Modified files receive special handling to
 prevent data loss** — a dirty buffer is never evicted to cold storage without
 its content being recoverable.
+
+In practice that rule is stronger than "clean". The test is *recoverable*, not
+*saved*, and there are two ways to pass it:
+
+```
+Modified file
+     |
+     | ~600ms after an edit
+     v
+  Journal  (~/.nishi/journal/)
+     |
+     +--> may now be unloaded like any other file
+     +--> revives DIRTY, from the journal, not from the file
+     +--> survives the process dying
+```
+
+An untitled buffer nobody has journalled is neither saved nor recorded, so it
+stays pinned — the buffer *is* the work. A file currently on screen is likewise
+never considered idle, however long since the last keystroke.
+
+The journal is host state addressed by real path, and deliberately not on the VFS
+mount table: mountable would mean addressable, and therefore writable, by
+anything holding a VfsPath — including extensions. The same reasoning that keeps
+the settings file off the mount table applies here with more force.
 
 ---
 
@@ -242,15 +305,21 @@ Everything in this document is design intent. What exists in the tree today:
 | Licensing | `LICENSE`, `LICENSE-MIT`, `NOTICE.md`, `THIRD_PARTY_LICENSE.md` | **Done** |
 | Icon system | `scripts/build-sprite.ts`, `src/mainview/icons.ts` | **Done** — Lucide (ISC) |
 | Desktop shell | `src/bun/index.ts`, `electrobun.config.ts`, `hutch.config.ts` | **Done** — v0.2.1 |
+| Virtual filesystem (editor) | `src/host/vfs.ts`, `src/core/vfs-path.ts` | **Done** — v0.3.0 |
+| File watching | `src/host/watcher.ts` | **Done** — v0.3.0 |
+| Document cache | `src/core/document-cache.ts` | **Done** — v0.3.0 |
+| Dirty-buffer journal | `src/host/journal.ts` | **Done** — v0.3.1 |
+| Native dialogs | `src/core/platform.ts` (`HostDialogs`) | **Done** — v0.3.1 |
+| Terminal / ConPTY | `src/host/pty/conpty.ts` | Written, **not wired up** — see `PLAN.MD` |
+| Environment virtualization (paths) | `src/host/vfs.ts` (`displayRealPath`) | **Partial** — v0.3.0 |
 | Extension API surface | `src/extensions/api.ts` | Stub — Stage 4 |
 | Sandbox layer | `src/extensions/sandbox.ts` | Stub — Stage 4 |
-| Virtual filesystem | `src/extensions/vfs.ts` | Stub — Stage 4 |
+| Extension VFS | `src/extensions/vfs.ts` | Stub — Stage 4, over the real VFS |
 | Network abstraction | `src/extensions/network.ts` | Stub — Stage 4 |
-| Environment virtualization | `src/extensions/environment.ts` | Stub — Stage 4 |
+| Environment virtualization (rest) | `src/extensions/environment.ts` | Stub — Stage 4 |
 | Permission model | `src/extensions/permissions.ts` | Stub — Stage 4 |
 | VS Code compatibility | `src/extensions/vscode-compat.ts` | Stub — Stage 4 |
 | Lua runtime | `src/lua/runtime.ts`, `lua/config.lua`, `lua/main.lua` | Stub — Stage 7 |
-| Document cache | `src/core/document-cache.ts` | Stub — Stage 2 |
 
 Stubs define the shape and record the constraints. They deliberately do not
 pretend to enforce anything yet — a sandbox that looks real but isn't is worse

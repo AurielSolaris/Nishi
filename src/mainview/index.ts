@@ -102,7 +102,7 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
       const state = app.workspace.state;
       const pane = state.panes.find((p) => p.id === state.activePaneId);
-      if (pane?.activeDocId) app.closeTab(pane.id, pane.activeDocId);
+      if (pane?.activeDocId) void app.closeTab(pane.id, pane.activeDocId);
       break;
     }
 
@@ -185,7 +185,7 @@ const info = await app.host.info();
 const store = ui();
 store.hostLabel = `${info.runtime} · ${info.platform}`;
 store.hostReady = true;
-store.root = app.root;
+store.root = app.workspaceInfo.label;
 
 app.status("Ready");
 console.info(`[nishi] ${BRAND.name} ${BRAND.version} "${BRAND.codename}" on ${info.runtime}`);

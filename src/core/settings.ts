@@ -128,6 +128,33 @@ export const SCHEMA: SettingSpec[] = [
     options: ["vertical", "horizontal"],
     group: "Workbench",
   },
+  {
+    key: "memory.unloadAfterMinutes",
+    label: "Unload idle files after",
+    description:
+      "Minutes a file may sit untouched before its contents are released. " +
+      "The tab, cursor and scroll position stay; the text is read back from " +
+      "disk when you look at the file again. Files with unsaved changes are " +
+      "never unloaded. Set to 0 to keep every open file in memory.",
+    kind: "number",
+    default: 30,
+    min: 0,
+    max: 600,
+    group: "Memory",
+  },
+  {
+    key: "memory.maxLoadedFiles",
+    label: "Maximum loaded files",
+    description:
+      "Upper bound on files held in memory at once. Beyond it, the least " +
+      "recently used saved file is unloaded early rather than waiting out the " +
+      "idle timer.",
+    kind: "number",
+    default: 24,
+    min: 4,
+    max: 512,
+    group: "Memory",
+  },
 ];
 
 const SPEC_BY_KEY = new Map(SCHEMA.map((s) => [s.key, s]));

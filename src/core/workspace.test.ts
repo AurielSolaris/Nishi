@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Workspace } from "./workspace.ts";
+import { mountRoot, vfsJoin } from "./vfs-path.ts";
 import { Settings } from "./settings.ts";
 
 describe("Workspace documents", () => {
@@ -14,10 +15,13 @@ describe("Workspace documents", () => {
 
   test("finds an already-open document by path", () => {
     const ws = new Workspace();
-    const doc = ws.open({ path: "/w/a.ts", name: "a.ts" });
+    const root = mountRoot("workspace");
+    const a = vfsJoin(root, "a.ts");
+    const b = vfsJoin(root, "b.ts");
+    const doc = ws.open({ path: a, name: "a.ts" });
 
-    expect(ws.documentForPath("/w/a.ts")).toBe(doc);
-    expect(ws.documentForPath("/w/b.ts")).toBeNull();
+    expect(ws.documentForPath(a)).toBe(doc);
+    expect(ws.documentForPath(b)).toBeNull();
   });
 
   test("closing activates the left-hand neighbour", () => {

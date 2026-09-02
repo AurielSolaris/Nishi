@@ -11,8 +11,8 @@ export const BRAND = {
   name: "Nishi",
   tagline: "A modern resurrection of Atom",
   identifier: "dev.nishi.editor",
-  version: "0.2.1",
-  codename: "Core Editor",
+  version: "0.3.1",
+  codename: "Modern Runtime",
 } as const;
 
 /** Icon + chrome palette. Keep in sync with src/mainview/index.css tokens. */

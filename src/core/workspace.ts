@@ -11,6 +11,7 @@
  */
 
 import { Document, type DocumentInit } from "./document.ts";
+import type { VfsPath } from "./vfs-path.ts";
 
 export type SplitDirection = "vertical" | "horizontal";
 
@@ -38,6 +39,7 @@ export class Workspace {
   #activePaneId: string;
   #direction: SplitDirection = "vertical";
   #listeners = new Set<Listener>();
+  #closedListeners = new Set<(documentId: string) => void>();
 
   constructor() {
     const first = this.#makePane();
@@ -82,11 +84,27 @@ export class Workspace {
   }
 
   /** Find an already-open document for a path, so files open once. */
-  documentForPath(path: string): Document | null {
+  documentForPath(path: VfsPath): Document | null {
     for (const doc of this.#documents.values()) {
       if (doc.path === path) return doc;
     }
     return null;
+  }
+
+  /**
+   * Notified when a document stops being shown by any pane and is dropped.
+   *
+   * The document cache subscribes to this so its bookkeeping does not outlive
+   * the documents it tracks — a cache that keeps entries for closed files is a
+   * memory leak in the component whose job is to prevent one.
+   */
+  onDocumentClosed(listener: (documentId: string) => void): () => void {
+    this.#closedListeners.add(listener);
+    return () => this.#closedListeners.delete(listener);
+  }
+
+  #noteClosed(documentId: string): void {
+    for (const listener of this.#closedListeners) listener(documentId);
   }
 
   subscribe(listener: Listener): () => void {
@@ -158,8 +176,14 @@ export class Workspace {
 
     // Drop the document once no pane shows it.
     const stillOpen = this.#panes.some((p) => p.tabs.includes(docId));
-    if (!stillOpen) this.#documents.delete(docId);
-    else this.#documents.get(docId)?.carets.delete(paneId);
+    if (!stillOpen) {
+      this.#documents.delete(docId);
+      this.#noteClosed(docId);
+    } else {
+      const doc = this.#documents.get(docId);
+      doc?.carets.delete(paneId);
+      doc?.scrollTops.delete(paneId);
+    }
 
     // An empty pane collapses, unless it is the last one.
     if (pane.tabs.length === 0 && this.#panes.length > 1) {
@@ -208,7 +232,9 @@ export class Workspace {
 
     // Forget documents no pane shows any more.
     for (const docId of pane.tabs) {
-      if (!this.#panes.some((p) => p.tabs.includes(docId))) this.#documents.delete(docId);
+      if (this.#panes.some((p) => p.tabs.includes(docId))) continue;
+      this.#documents.delete(docId);
+      this.#noteClosed(docId);
     }
 
     this.#emit();

@@ -20,20 +20,40 @@ import {
   type SearchOptions,
 } from "../core/search.ts";
 import { app } from "./app.ts";
+import { vfsDirname, vfsJoin, type VfsPath } from "../core/vfs-path.ts";
 import { iconForEntry } from "./icons.ts";
 import type { UiStore } from "./ui-store.ts";
 import type { EditorView } from "./editor-view.ts";
 
 type Row = {
   name: string;
-  path: string;
+  path: VfsPath;
   kind: "file" | "directory";
   depth: number;
   expanded: boolean;
   loading: boolean;
+  /** Reached through a symbolic link that still resolves inside the mount. */
+  link: boolean;
 };
 
-const sep = (path: string) => (path.includes("\\") ? "\\" : "/");
+/**
+ * Rows are addressed by VfsPath, so building a child path is `vfsJoin` and not
+ * a guess about which separator this platform uses. The helper this replaces
+ * sniffed the parent for a backslash, which picks wrong for any workspace path
+ * that happens to contain neither separator.
+ */
+const toRow = (
+  entry: { name: string; path: VfsPath; kind: "file" | "directory"; link: boolean },
+  depth: number,
+): Row => ({
+  name: entry.name,
+  path: entry.path,
+  kind: entry.kind,
+  depth,
+  expanded: false,
+  loading: false,
+  link: entry.link,
+});
 
 export function registerComponents(Alpine: AlpineType, editor: EditorView): void {
   // ----------------------------------------------------------- explorer --
@@ -46,11 +66,16 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
     init() {
       void this.refresh();
       window.addEventListener("nishi:root-changed", () => void this.refresh());
+      // The host watches the workspace and says which folders moved; redraw only
+      // those rather than collapsing the whole tree on every save.
+      window.addEventListener("nishi:fs-changed", (event) => {
+        const detail = (event as CustomEvent<{ directories: VfsPath[] }>).detail;
+        void this.refreshDirectories(detail?.directories ?? []);
+      });
     },
 
     get rootName(): string {
-      const root = app.root;
-      return root.split(/[\\/]/).filter(Boolean).pop() ?? root;
+      return app.workspaceInfo.label;
     },
 
     /** Sprite symbol id for a row, by kind and file type. */
@@ -63,14 +88,7 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
       this.error = "";
       try {
         const { entries } = await app.host.fs.list();
-        this.rows = entries.map((e) => ({
-          name: e.name,
-          path: e.path,
-          kind: e.kind,
-          depth: 0,
-          expanded: false,
-          loading: false,
-        }));
+        this.rows = entries.map((entry) => toRow(entry, 0));
       } catch (error) {
         this.error = error instanceof Error ? error.message : String(error);
       } finally {
@@ -99,18 +117,7 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
       row.loading = true;
       try {
         const { entries } = await app.host.fs.list(row.path);
-        this.rows.splice(
-          index + 1,
-          0,
-          ...entries.map((e) => ({
-            name: e.name,
-            path: e.path,
-            kind: e.kind,
-            depth: row.depth + 1,
-            expanded: false,
-            loading: false,
-          })),
-        );
+        this.rows.splice(index + 1, 0, ...entries.map((entry) => toRow(entry, row.depth + 1)));
         row.expanded = true;
       } catch (error) {
         app.fail(error, "Could not read folder");
@@ -119,12 +126,52 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
       }
     },
 
+    /** Index range of the rows nested under `index`, excluding the row itself. */
+    childRange(index: number): { start: number; end: number } {
+      const row = this.rows[index]!;
+      let end = index + 1;
+      while (end < this.rows.length && this.rows[end]!.depth > row.depth) end++;
+      return { start: index + 1, end };
+    },
+
+    /**
+     * Redraw the folders a watcher batch touched.
+     *
+     * Only expanded folders are re-listed: a collapsed one has no rows on screen
+     * to be wrong, and reads fresh whenever it is opened. If the root itself
+     * moved, the whole tree is rebuilt and the rest of the batch is redundant.
+     */
+    async refreshDirectories(directories: VfsPath[]) {
+      if (directories.includes(app.workspaceInfo.uri)) {
+        await this.refresh();
+        return;
+      }
+
+      for (const directory of directories) {
+        const index = this.rows.findIndex((row) => row.path === directory && row.expanded);
+        if (index === -1) continue;
+
+        const row = this.rows[index]!;
+        const { start, end } = this.childRange(index);
+        try {
+          const { entries } = await app.host.fs.list(directory);
+          this.rows.splice(start, end - start, ...entries.map((entry) => toRow(entry, row.depth + 1)));
+        } catch {
+          // The folder is gone. Drop its children and collapse it; the change
+          // event on its parent removes the row itself.
+          this.rows.splice(start, end - start);
+          row.expanded = false;
+        }
+      }
+    },
+
     /** Directory to create new entries in: the selected folder, else the root. */
-    targetDir(index: number | null): string {
-      if (index === null) return app.root;
+    targetDir(index: number | null): VfsPath {
+      const root = app.workspaceInfo.uri;
+      if (index === null) return root;
       const row = this.rows[index];
-      if (!row) return app.root;
-      return row.kind === "directory" ? row.path : row.path.slice(0, row.path.lastIndexOf(sep(row.path)));
+      if (!row) return root;
+      return row.kind === "directory" ? row.path : vfsDirname(row.path);
     },
 
     async create(kind: "file" | "directory", index: number | null = null) {
@@ -132,7 +179,7 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
       const name = window.prompt(`New ${kind === "file" ? "file" : "folder"} name:`);
       if (!name) return;
       try {
-        await app.host.fs.create(`${dir}${sep(dir)}${name}`, kind);
+        await app.host.fs.create(vfsJoin(dir, name), kind);
         await this.refresh();
         app.status(`Created ${name}`);
       } catch (error) {
@@ -146,9 +193,8 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
       const name = window.prompt("Rename to:", row.name);
       if (!name || name === row.name) return;
 
-      const dir = row.path.slice(0, row.path.lastIndexOf(sep(row.path)));
       try {
-        await app.host.fs.rename(row.path, `${dir}${sep(dir)}${name}`);
+        await app.host.fs.rename(row.path, vfsJoin(vfsDirname(row.path), name));
         await this.refresh();
         app.status(`Renamed to ${name}`);
       } catch (error) {
@@ -159,7 +205,14 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
     async remove(index: number) {
       const row = this.rows[index];
       if (!row) return;
-      if (!window.confirm(`Delete ${row.name}? This cannot be undone.`)) return;
+      const confirmed = await app.host.dialogs.confirm({
+        title: `Delete ${row.name}?`,
+        message: `Delete ${row.name}?`,
+        detail: "This cannot be undone.",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!confirmed) return;
       try {
         await app.host.fs.remove(row.path);
         await this.refresh();
@@ -170,11 +223,12 @@ export function registerComponents(Alpine: AlpineType, editor: EditorView): void
     },
 
     async openFolder() {
-      // The browser host has no native folder picker; ask for a path.
-      const path = window.prompt("Open folder (absolute path):", app.root);
-      if (!path) return;
-      await app.setRoot(path);
-      (Alpine.store("ui") as UiStore).root = app.root;
+      // The host decides how to ask — a native picker on the desktop, a prompt
+      // in the browser. Either way this is the one input in the whole UI that is
+      // a real operating-system path rather than a VfsPath: mounting a folder is
+      // how the VFS gets something to publish.
+      await app.pickFolder();
+      (Alpine.store("ui") as UiStore).root = app.workspaceInfo.label;
     },
   }));
 
