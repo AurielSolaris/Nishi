@@ -3,9 +3,9 @@
   <h1>Nishi</h1>
   <p><em>nishi</em> — निशा / নিশি, <strong>night</strong></p>
   <p>A modern resurrection of Atom: a lightweight, hackable editor built on
-  Electrobun&nbsp;+&nbsp;Bun, with a VSCode-compatible extension ecosystem and
-  alternative browser rendering.</p>
-  <p><code>v0.2.1</code> — Stage 1, "Core Editor"</p>
+  Electrobun&nbsp;+&nbsp;Bun, with a sandboxed filesystem, a VSCode-compatible
+  extension ecosystem and alternative browser rendering.</p>
+  <p><code>v0.3.1</code> — Stage 2, "Modern Runtime"</p>
 </div>
 
 ---
@@ -13,21 +13,23 @@
 > ## ⚠️ Early development — expect breakage
 >
 > **Nishi is in early development and is probably broken.** It is at version
-> `0.2.1` of a ten-stage roadmap: the foundations work, but this is not a
+> `0.3.1` of a ten-stage roadmap: the foundations work, but this is not a
 > finished editor and is not ready to be anyone's daily driver.
 >
 > Concretely, at this point:
 >
 > - There is **no syntax highlighting**, and the text surface is still a
 >   `<textarea>`.
-> - There is **no file watching**, so changes made outside the editor go
->   unnoticed until you refresh.
-> - Extensions, Lua support and the document cache are **stubs that deliberately
->   throw** — none of it is implemented.
+> - Extensions and Lua support are **stubs that deliberately throw** — none of it
+>   is implemented.
+> - The sandboxed filesystem is new in this release and has not had outside
+>   scrutiny. It is tested, and it is not audited. Do not treat it as a security
+>   guarantee yet.
 > - Only **Windows** has been exercised so far. macOS and Linux builds are
 >   configured but untested.
 > - Interfaces, file formats and settings keys **will change** without migration
->   paths.
+>   paths. `0.3.x` changed how files are addressed internally, which is exactly
+>   the kind of break to expect again.
 >
 > **Back up anything you open with it.** It writes real files to disk, and it has
 > not been through the kind of testing that earns trust with your data. Bug
@@ -37,10 +39,28 @@
 
 ## What this release is
 
-**A real desktop editor you can work in.** v0.1.0 was a shell with nothing
-behind it. v0.2.0 gave it a text buffer, an explorer, splits, search and
-settings. v0.2.1 puts it in a **native window** on Electrobun, with the same
-editor and the same filesystem service behind RPC instead of HTTP.
+**The release where the editor stopped touching your filesystem directly.**
+
+v0.1.0 was a shell. v0.2.0 gave it a buffer, an explorer, splits, search and
+settings. v0.2.1 put it in a native window. `0.3.0` changes what is underneath
+all of it: the editor no longer holds operating-system paths at all.
+
+It addresses files like this —
+
+```
+nishi://workspace/src/core/buffer.ts
+```
+
+— and only the host process can turn one of those into a real path. There is no
+drive letter, no `~`, no `..`, no way to name a file outside the folder you
+opened, because the path type has no syntax for one. See
+[Sandboxed filesystem](#sandboxed-filesystem).
+
+On top of that boundary, the rest of Stage 2: the host now **watches the
+workspace** and tells the editor when something changed underneath it, files left
+open but untouched for **30 minutes unload themselves** and reload on demand, and
+unsaved work is **journalled to disk** — so a modified file no longer has to sit
+in memory forever, and your edits survive the process dying.
 
 It is not finished — there is no syntax highlighting yet. That is named below
 rather than glossed.
@@ -92,7 +112,7 @@ command is too blunt:
 | `bun run icon` | Regenerates `assets/icon.png`, `.ico` and `.svg` |
 | `bun run sprite` | Rebuilds the inline icon sprite (mark + Lucide set) |
 | `bun run assets` | Both of the above, in order |
-| `bun run test` | Test suite (54 tests) |
+| `bun run test` | Test suite (151 tests) |
 | `bun run typecheck` | `tsc --noEmit`, including the main process |
 | `bun run check` | Typecheck then test |
 | `bun run clean` | Removes `build/` and `.build/` |
@@ -100,6 +120,60 @@ command is too blunt:
 Every `desktop:*` and `build*` command goes through `scripts/hutch.ts`, which
 resolves the Hutch binary from `~/.hutch/bin` directly — so they work even in a
 terminal opened before Hutch was installed and PATH updated.
+
+## Sandboxed filesystem
+
+Nishi is not only an opinionated Atom. The editor runs against a **virtual
+filesystem**, not the disk.
+
+Every file the UI touches is named by mount and POSIX segments:
+
+```
+nishi://workspace/src/core/buffer.ts
+```
+
+`src/host/vfs.ts` owns the mount table and is the only module in the tree that
+turns one of those into a real path. Everything above it — explorer, tabs, save
+path, and in Stage 4 the extension host — cannot express a path outside a mount.
+
+**Why the editor and not just extensions.** The design notes always called for a
+VFS for extensions. Putting the editor behind the same boundary is what makes it
+trustworthy: a boundary only guests use is a boundary nobody tests, and the
+editor is the heaviest filesystem user there is. Stage 4's extension VFS becomes
+a capability-checked *subset* of this module rather than a second implementation
+of path handling — which is where filesystem sandboxes usually fail.
+
+**What it enforces:**
+
+| Attack | What happens |
+| --- | --- |
+| `../../etc/passwd` | Rejected at parse time — `..` is not a legal segment |
+| A raw `C:\Windows\win.ini` | Rejected — not a Nishi path |
+| A symlink out of the workspace | Does not resolve; the entry is omitted from listings |
+| `notes.txt:hidden` (NTFS alternate data stream) | Rejected — `:` is not legal in a name |
+| `CON`, `LPT1.txt` (Windows devices) | Rejected, on every platform |
+| `evil.` / `evil ` (Windows strips these) | Rejected — one file to the OS, two entries to us |
+| `%2e%2e` | Stays literal. Paths are never percent-decoded |
+| Writing through a read-only mount | Refused at mapping time, not by the caller |
+
+Containment is **canonical, not lexical**: every mapping resolves the deepest
+existing ancestor with `realpath` and re-checks it against the mount's own
+realpath. A string-prefix check — which is what the previous release did — calls
+a link inside the workspace pointing at `~/.ssh` "inside the workspace".
+
+The view is also never told the workspace's absolute path. It gets a mount URI, a
+folder label, and a display string with your home directory elided
+(`~/Code/nishi`), so your username stays out of the DOM and out of window titles.
+
+**The one privileged operation** is mounting a folder. "Open folder" takes a real
+path, because that is the user's explicit gesture and carries the same authority
+a native folder picker would. It is marked `PRIVILEGED` in the source and is the
+only route by which a new region of disk becomes reachable.
+
+> This is tested, not audited. 47 tests cover the boundary, including symlink
+> escapes against a real temporary directory rather than a mocked filesystem. A
+> security audit is Stage 9 work. Until then, treat it as a well-built fence, not
+> a proof.
 
 ## What works
 
@@ -119,6 +193,36 @@ carets.
 
 **Find and replace** — literal, regex, match-case and whole-word; navigation
 wraps; replace one or replace all; `$1` capture groups expand in regex mode.
+
+**File watching** — the host watches the workspace and pushes changes to the
+editor. Edit a file in another program and a clean tab reloads itself; a tab with
+unsaved changes is flagged rather than overwritten, because the copy in memory is
+the one with your work in it. The explorer redraws only the folders that moved.
+Events are coalesced, and the editor's own saves are muted so a save does not
+come back as "this file changed on disk".
+
+**Memory** — a file left untouched for 30 minutes releases its contents. The tab,
+the cursor and the scroll position all stay; the text is read back the moment you
+look at the file again. Whatever is currently on screen is never unloaded, however
+long it has been open. Both the timeout and the ceiling on loaded files are
+settings; set the timeout to 0 to switch it off.
+
+**Unsaved work is written down** — edits are journalled to `~/.nishi/journal/`
+shortly after you make them. Two things follow. A modified file can be unloaded
+like any other and comes back *still modified*, so twenty edited files no longer
+mean twenty buffers pinned in memory. And if Nishi dies, the next launch offers
+the unsaved work back as dirty tabs — it does not write to your files on your
+behalf, because the previous session never decided to save them.
+
+The rule the whole cache rests on:
+
+> **A document is never unloaded unless its content is recoverable** — either
+> saved to its file, or written to the journal. An untitled buffer nobody has
+> journalled yet is neither, so it stays in memory.
+
+**Native dialogs** — opening a folder and confirming a destructive action use
+real OS dialogs on the desktop. The browser dev host falls back to the DOM's own
+prompt and confirm, and says so rather than pretending.
 
 **Settings** — schema-driven, so the pane renders itself from the schema and
 adding a setting is one entry. Values are coerced and clamped, and persist to
@@ -150,10 +254,22 @@ Named plainly, so nothing reads as broken:
   render coloured spans. Replacing it with a line renderer is Stage 3 work, and
   the buffer API is already shaped for it. Find highlights only the current
   match for the same reason.
-- **No file watching** — an external change is not noticed until you hit Refresh.
 - **No command palette**, no drag-and-drop in the explorer, no multi-select.
-- **Extensions, Lua and the document cache are stubs.** They throw rather than
-  pretend to work. See `EXTRAS.md`.
+- **Extensions and Lua are stubs.** They throw rather than pretend to work. See
+  `EXTRAS.md`.
+- **No Save As outside the workspace.** Electrobun has no native *save* dialog,
+  and under the VFS a real path may only enter through the folder-open gesture —
+  so Save As takes a workspace-relative path. To save elsewhere, open that folder.
+  That is a consequence of the sandbox rather than a missing feature.
+- **No terminal yet.** A complete ConPTY binding is in the tree
+  (`src/host/pty/conpty.ts`) but is not wired to anything: on the development
+  machine ConPTY returns no output at all, reproduced independently in .NET, so
+  it would have shipped unverified. See `PLAN.MD` for the full investigation.
+- **Startup time is unmeasured.** It was on the Stage 2 list and did not get
+  done; there is no baseline against the packaged app yet, and a number invented
+  without one would be worse than an unticked box. Carried to Stage 3.
+- **Recursive file watching is not available on every platform.** Where it fails,
+  the editor says so and Refresh still works, rather than pretending to watch.
 
 ## Runtime
 
@@ -176,9 +292,16 @@ taken on faith.
 
 Nishi's UI never talks to a runtime directly — it talks to a `NishiHost`
 (`src/core/platform.ts`). The desktop shell and the dev host implement it over
-RPC and HTTP respectively, and **both delegate to the same `FsService`**, so
-behaviour cannot drift between them. That seam is also what lets a Gecko
-renderer drop in at Stage 6.
+RPC and HTTP respectively, and **both delegate to the same `FsService` over the
+same `Vfs`**, so behaviour cannot drift between them. That seam is also what lets
+a Gecko renderer drop in at Stage 6.
+
+As of `0.3.0` the seam runs both ways. File watching means the host has something
+to say on its own, so it pushes: an RPC message on the desktop, Server-Sent
+Events on the dev host. Both directions are declared once, in
+`src/core/host-rpc.ts`, which both ends import — a message declared on one side
+and not the other fails at runtime, and one definition makes the compiler check
+both ends against the same thing.
 
 The desktop build differs from the dev host in three ways, all handled by the
 `preBuild` hook in `scripts/build-view.ts`: HTML is copied verbatim (so asset
@@ -198,7 +321,7 @@ lua/                    config.lua / main.lua templates (stubs — Stage 7)
 scripts/
   hutch.ts              resolves and runs the Hutch toolchain
   clean.ts              removes build/ and .build/
-  dev-server.ts         Bun dev host + filesystem/settings API
+  dev-server.ts         Bun dev host + filesystem/settings API + SSE events
   sass-plugin.ts        compiles SCSS in Bun's bundler — no .css in the tree
   build-view.ts         preBuild hook: compiles SCSS + rewrites asset refs
   build-sprite.ts       inlines the mark + Lucide icons into the markup
@@ -212,10 +335,17 @@ src/
     workspace.ts        documents, panes, tabs
     search.ts           find and replace
     settings.ts         schema-driven settings store
-    document-cache.ts   active/cold cache (stub — Stage 2)
+    document-cache.ts   active/cold cache — 30-minute idle unload
+    vfs-path.ts         what a legal nishi:// path is (shared, node-free)
+    host-rpc.ts         every type that crosses the host seam
     platform.ts         the host seam: Electrobun vs browser
-  extensions/           sandbox, VFS, network, permissions (stubs — Stage 4)
-  host/fs-service.ts    filesystem service, shared by both hosts
+  extensions/           sandbox, extension VFS, network, permissions (stubs — Stage 4)
+  host/
+    vfs.ts              the mount table — the only place a path becomes real
+    fs-service.ts       filesystem service, shared by both hosts
+    watcher.ts          recursive file watching, emitting nishi:// paths
+    journal.ts          unsaved work on disk, and crash recovery
+    pty/conpty.ts       ConPTY over bun:ffi (not wired up — see PLAN.MD)
   lua/runtime.ts        Lua config runtime (stub — Stage 7)
   mainview/
     index.html          shell markup + generated icon sprite
@@ -232,6 +362,7 @@ src/
 | Choice | Why |
 | --- | --- |
 | **Bun + Electrobun** | No Electron. A system webview instead of a bundled Chromium. |
+| **A VFS under the editor, not just under extensions** | A boundary only guests use is a boundary nobody tests. Routing the editor through it means bugs in the mapping surface in normal use. |
 | **Alpine.js → htmx → Ember** | A strict ladder; no rung is skipped without hitting its real limit. v0.2.x uses Alpine for the explorer, settings and find bar. |
 | **Imperative editor surface** | Alpine drives the panels, but the text surface needs exact control over when a value is written back, or the caret jumps. |
 | **SCSS, not Tailwind** | If we are writing the classes anyway, they may as well be our own. A Bun plugin compiles `.scss` directly — there is no `.css` file in the tree. |
@@ -249,10 +380,11 @@ inlined at build time by `scripts/build-sprite.ts`. To change the set, edit the
 
 ## Design notes
 
-`EXTRAS.md` covers the parts that are decided but not yet built — the extension
-security model (extensions are guests; the abstraction layer exists regardless
-of permission status), the virtualized filesystem/network/environment, VS Code
-compatibility, Lua support, and the active/cold document cache.
+`EXTRAS.md` covers the design behind the security model — extensions are guests,
+and the abstraction layer exists regardless of permission status — along with the
+parts still to be built: network and environment virtualization, VS Code
+compatibility, and Lua support. The virtualized filesystem and the document cache
+described there are no longer plans; both shipped in `0.3.0`.
 
 ## Roadmap
 
@@ -260,8 +392,8 @@ compatibility, Lua support, and the active/cold document cache.
 | --- | --- | --- | --- |
 | 0 | 0.1.0 | Foundation | **shipped** (desktop shell live in 0.2.1) |
 | 1 | 0.2.1 | Core editor — buffer, explorer, splits, search, settings | **shipped** |
-| 2 | 0.3.0 | Modern runtime — native fs, IPC, startup, document cache | next |
-| 3 | 0.4.0 | Themes — Catppuccin, Rose Pine, Dracula + syntax highlighting | planned |
+| 2 | 0.3.1 | Modern runtime — sandboxed VFS, file watching, push IPC, document cache, journal | **shipped** |
+| 3 | 0.4.0 | Themes — Catppuccin, Rose Pine, Dracula + syntax highlighting | next |
 | 4 | 0.5.0 | Extensions — sandbox, VFS, VSCode compatibility | planned |
 | 5 | 0.6.0 | Language support — LSP, tree-sitter | planned |
 | 6 | 0.7.0 | Gecko renderer experiment | planned |

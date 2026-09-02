@@ -14,6 +14,7 @@
 import type { Document } from "../core/document.ts";
 import type { Pane, WorkspaceState } from "../core/workspace.ts";
 import { app } from "./app.ts";
+import { vfsDisplay } from "../core/vfs-path.ts";
 import { iconForEntry } from "./icons.ts";
 
 type PaneView = {
@@ -186,15 +187,23 @@ export class EditorView {
         const tab = document.createElement("button");
         tab.className = `tab${docId === pane.activeDocId ? " is-active" : ""}`;
         tab.role = "tab";
-        tab.title = doc.path ?? doc.name;
+        // The full VfsPath, not an OS path — the tooltip is workspace-relative
+        // and says nothing about where the folder lives on disk.
+        tab.title = doc.staleOnDisk
+          ? `${doc.path ? vfsDisplay(doc.path) : doc.name} — changed on disk`
+          : doc.path
+            ? vfsDisplay(doc.path)
+            : doc.name;
         tab.addEventListener("mousedown", (e) => {
           // Middle-click closes, as in Atom.
           if (e.button === 1) {
             e.preventDefault();
-            app.closeTab(pane.id, docId);
+            void app.closeTab(pane.id, docId);
           }
         });
-        tab.addEventListener("click", () => app.workspace.activateTab(pane.id, docId));
+        // Through the app, not the workspace: focusing a tab may need to read a
+        // cold document back from disk before the renderer can draw it.
+        tab.addEventListener("click", () => void app.activateTab(pane.id, docId));
 
         // Same file-type icon the explorer uses, so a tab reads as the file.
         tab.append(useIconRef(iconForEntry("file", doc.name), "icon tab__icon"));
@@ -217,7 +226,7 @@ export class EditorView {
         close.title = `Close ${doc.name}`;
         close.addEventListener("click", (e) => {
           e.stopPropagation();
-          app.closeTab(pane.id, docId);
+          void app.closeTab(pane.id, docId);
         });
         tab.append(close);
 
@@ -269,14 +278,30 @@ export class EditorView {
 
     const switched = view.loadedDocId !== doc.id;
     if (switched) {
-      // Remember where the caret was in the outgoing document.
+      // Remember where the caret and scroll were in the outgoing document, so a
+      // document that later goes cold has something to be restored to.
       if (view.loadedDocId) {
         const previous = state.documents.get(view.loadedDocId);
         previous?.carets.set(pane.id, view.input.selectionStart);
+        previous?.scrollTops.set(pane.id, view.input.scrollTop);
       }
       view.loadedDocId = doc.id;
       view.loadedVersion = -1;
     }
+
+    // Unloaded after sitting idle (see document-cache.ts). Show an empty,
+    // read-only surface and read it back; `warm` touches the workspace, which
+    // re-enters this method with a buffer. Read-only matters: without it a
+    // keystroke landing in this instant would be diffed against the placeholder
+    // and treated as deleting the file's entire contents.
+    if (doc.isCold) {
+      view.input.readOnly = true;
+      view.input.value = "";
+      view.loadedVersion = -1;
+      void app.warm(doc);
+      return;
+    }
+    view.input.readOnly = false;
 
     if (view.loadedVersion !== doc.buffer.version) {
       const text = doc.buffer.getText();
@@ -292,6 +317,7 @@ export class EditorView {
         view.input.setSelectionRange(at, at);
       }
       view.loadedVersion = doc.buffer.version;
+      if (switched) view.input.scrollTop = doc.scrollTops.get(pane.id) ?? 0;
     }
 
     this.#refreshGutter(view);
