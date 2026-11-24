@@ -13,6 +13,7 @@ import java.awt.event.KeyEvent
 import java.awt.Toolkit
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
+import java.nio.file.Files
 import java.nio.file.Path
 import javax.swing.BorderFactory
 import javax.swing.AbstractAction
@@ -28,14 +29,27 @@ import javax.swing.KeyStroke
 import javax.swing.SwingConstants
 import javax.swing.Timer
 
-internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") {
+internal class NishiWindow(
+    private val journal: DraftJournal,
+    private val filePicker: FilePicker = desktopFilePicker,
+) : JFrame("Nishi") {
     private val tabs: EditorTabs = EditorTabs(::updateActiveTab, ::closeTab)
     private val status = Night.label("Ready", 11)
     private val cursorStatus = Night.label("", 11).apply { horizontalAlignment = SwingConstants.RIGHT }
+    private val languageStatus = LanguageStatus(::chooseLanguage)
+    private val languagePicker = LanguagePicker(
+        onChoose = { language ->
+            activeTab?.let { tab ->
+                tab.languageOverride = language
+                languageStatus.update(tab)
+            }
+        },
+        onDismiss = { activeTab?.activeArea?.requestFocusInWindow() },
+    )
     private val explorer = WorkspaceExplorer(::openFile, ::showError)
     private val find = FindBar { activeTab }
     private val sidebar = WorkbenchSidebar(
-        explorer, ::chooseFolder, ::newBuffer, ::refreshExplorer, { find.open() }, ::changeAppearance,
+        explorer, ::chooseFile, ::chooseFolder, ::newBuffer, ::refreshExplorer, { find.open() }, ::changeAppearance,
     )
     private val chrome = WindowChrome(this, commands())
     private val draftTimer = Timer(600) { flushDrafts() }.apply { isRepeats = false }
@@ -64,11 +78,15 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
                 BorderFactory.createEmptyBorder(0, 14, 0, 14),
             )
             add(status, BorderLayout.CENTER)
-            add(cursorStatus, BorderLayout.EAST)
+            add(JPanel(BorderLayout(4, 0)).apply {
+                isOpaque = false
+                add(cursorStatus, BorderLayout.CENTER)
+                add(languageStatus, BorderLayout.EAST)
+            }, BorderLayout.EAST)
         }
         add(JPanel(BorderLayout()).apply {
             background = Night.editor
-            add(tabs, BorderLayout.CENTER)
+            add(languagePicker.over(tabs), BorderLayout.CENTER)
             add(JPanel().apply {
                 layout = BoxLayout(this, BoxLayout.Y_AXIS)
                 add(find)
@@ -136,12 +154,34 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
         if (picker.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) openFolder(picker.selectedFile.toPath())
     }
 
+    private fun chooseFile() = attempt {
+        val selected = filePicker.choose(this, FilePickerMode.OPEN, workspace?.root, null) ?: return@attempt
+        val target = selectedFile(selected)
+        openFile(target.workspace, target.file)
+    }
+
+    // Choosing one file gives the editor a binding for that file. The explorer's mount comes only from Open Folder.
+    private fun selectedFile(path: Path, preferred: Workspace? = null): FileBinding {
+        val selected = path.toAbsolutePath().normalize()
+        val parent = requireNotNull(selected.parent) { "Choose a file." }
+        val directory = Workspace.open(parent)
+        val target = directory.root.resolve(selected.fileName)
+        val mounted = sequenceOf(preferred, workspace).filterNotNull()
+            .firstOrNull { target.startsWith(it.root) } ?: directory
+        val file = mounted.file(mounted.root.relativize(target).joinToString("/"))
+        return FileBinding(mounted, file, null)
+    }
+
     private fun refreshExplorer() = attempt {
         workspace?.let(explorer::mount)
+        languageStatus.update(activeTab)
     }
 
     private fun openFile(mounted: Workspace, file: WorkspaceFile) = attempt {
-        val existing = openTabs().find { it.binding?.file == file }
+        val fullPath = file.root.resolve(file.relativePath)
+        val existing = openTabs().find { tab ->
+            tab.binding?.file?.let { it.root.resolve(it.relativePath) } == fullPath
+        }
         if (existing != null) {
             tabs.select(existing)
             return@attempt
@@ -192,10 +232,17 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
 
     private fun updateActiveTab() {
         val tab = activeTab
+        languagePicker.dismiss()
         updateTitle(tab)
         status.text = tab?.location ?: "Ready"
         if (tab == null) cursorStatus.text = "" else updateCursor(tab)
+        languageStatus.update(tab)
         find.refresh()
+    }
+
+    private fun chooseLanguage() {
+        val tab = activeTab ?: return
+        languagePicker.open(tab.language, tab.languageOverride)
     }
 
     private fun updateTitle(tab: EditorTab?) {
@@ -225,15 +272,12 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
         val tab = activeTab ?: return@attempt
         val original = tab.binding
         val target = if (copy || original == null) {
-            val destination = (if (copy) workspace else tab.homeWorkspace ?: workspace)
-                ?: throw IllegalStateException("Open a folder before saving a new file.")
+            val home = original?.workspace ?: tab.homeWorkspace ?: workspace
+            val directory = original?.file?.let { it.root.resolve(it.relativePath).parent } ?: home?.root
             val proposed = if (original == null) "${tab.nameForTab}.txt" else "copy-${original.file.name}"
-            val answer = JOptionPane.showInputDialog(
-                this,
-                "Path inside ${destination.name}",
-                proposed,
-            ) ?: return@attempt
-            FileBinding(destination, destination.file(answer.replace('\\', '/')), null)
+            val selected = filePicker.choose(this, FilePickerMode.SAVE, directory, proposed) ?: return@attempt
+            if (Files.exists(selected)) throw IllegalArgumentException("That file already exists. Choose a new filename.")
+            selectedFile(selected, home)
         } else {
             original
         }
@@ -252,8 +296,11 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
         tab.hasDiskConflict = false
         tab.state.markSaved(snapshot)
         updateTabLabel(tab)
+        if (original?.file != target.file) languageStatus.update(tab)
         journal.drop(tab.id)
-        if (target.fingerprint == null && workspace?.root == target.workspace.root) refreshExplorer()
+        if (target.fingerprint == null && workspace?.root?.let {
+                target.file.root.resolve(target.file.relativePath).startsWith(it)
+            } == true) refreshExplorer()
         status.text = "Saved ${target.file.name}"
     }
 
@@ -307,7 +354,8 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
                 addActionListener { action() }
             })
         }
-        item("Open Folder…", "open-folder", KeyEvent.VK_O, action = ::chooseFolder)
+        item("Open File…", "open-file", KeyEvent.VK_O, action = ::chooseFile)
+        item("Open Folder…", "open-folder", KeyEvent.VK_O, shift = true, action = ::chooseFolder)
         item("New Buffer", "new-buffer", KeyEvent.VK_N, action = ::newBuffer)
         item("Save", "save", KeyEvent.VK_S) { save() }
         item("Save to New File…", "save-as", KeyEvent.VK_S, shift = true) { save(copy = true) }
@@ -319,6 +367,7 @@ internal class NishiWindow(private val journal: DraftJournal) : JFrame("Nishi") 
             .put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, shortcut or InputEvent.SHIFT_DOWN_MASK), "redo")
         item("Find…", "find", KeyEvent.VK_F) { find.open() }
         item("Replace…", "replace", KeyEvent.VK_H) { find.open(withReplace = true) }
+        item("Change Language Mode…", "language-mode", KeyEvent.VK_L, shift = true, action = ::chooseLanguage)
         menu.addSeparator()
         item("Split Editor", "split", KeyEvent.VK_BACK_SLASH) { activeTab?.split() }
         item("Toggle Explorer", "explorer", KeyEvent.VK_B, action = sidebar::toggleExplorer)

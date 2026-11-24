@@ -8,6 +8,7 @@ import java.awt.RenderingHints
 import javax.swing.JComponent
 import javax.swing.JScrollPane
 import javax.swing.JTextArea
+import javax.swing.plaf.basic.BasicTextAreaUI
 import javax.swing.text.Document
 
 internal data class EditorAppearance(
@@ -18,7 +19,7 @@ internal data class EditorAppearance(
     val wordWrap: Boolean = false,
 )
 
-internal class EditorSurface(document: Document) : JTextArea(document) {
+internal class EditorSurface(document: Document, highlighting: SyntaxHighlighting) : JTextArea(document) {
     private var highlightCurrentLine = true
     private val numbers = LineNumbers()
     val scroll: JScrollPane = workbenchScroll(this).apply {
@@ -27,6 +28,7 @@ internal class EditorSurface(document: Document) : JTextArea(document) {
     }
 
     init {
+        setUI(SyntaxTextAreaUI(highlighting))
         isOpaque = false
         foreground = Night.text
         caretColor = Night.bright
@@ -56,6 +58,11 @@ internal class EditorSurface(document: Document) : JTextArea(document) {
         numbers.revalidate()
         numbers.repaint()
         repaint()
+    }
+
+    fun detach() {
+        setUI(BasicTextAreaUI())
+        document = javax.swing.text.PlainDocument()
     }
 
     override fun paintComponent(graphics: Graphics) {

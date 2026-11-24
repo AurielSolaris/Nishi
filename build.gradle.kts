@@ -8,6 +8,13 @@ plugins {
 subprojects {
     repositories {
         mavenCentral()
+        ivy {
+            name = "EclipseTm4e"
+            url = uri("https://download.eclipse.org/tm4e/releases/0.15.1/plugins/")
+            patternLayout { artifact("[artifact]_[revision].[ext]") }
+            metadataSources { artifact() }
+            content { includeModule("org.eclipse", "org.eclipse.tm4e.core") }
+        }
     }
 
     plugins.withId("org.jetbrains.kotlin.jvm") {

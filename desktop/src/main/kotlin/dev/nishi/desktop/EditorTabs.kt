@@ -192,7 +192,7 @@ internal class EditorTabs(
                 }
             })
             add(Box.createVerticalStrut(19))
-            add(Night.label("Pick a file from the explorer to start editing.").apply { alignmentX = LEFT_ALIGNMENT })
+            add(Night.label("Open a file or create a buffer to start editing.").apply { alignmentX = LEFT_ALIGNMENT })
         }
         add(content, GridBagConstraints().apply {
             weightx = 1.0

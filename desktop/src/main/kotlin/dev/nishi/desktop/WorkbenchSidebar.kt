@@ -23,6 +23,7 @@ import javax.swing.plaf.basic.BasicSpinnerUI
 
 internal class WorkbenchSidebar(
     explorer: WorkspaceExplorer,
+    chooseFile: () -> Unit,
     chooseFolder: () -> Unit,
     newBuffer: () -> Unit,
     refresh: () -> Unit,
@@ -62,13 +63,15 @@ internal class WorkbenchSidebar(
         }
         val hint = JPanel(FlowLayout(FlowLayout.LEFT, 14, 10)).apply {
             background = Night.panel
-            add(JButton("Open a folder…").apply {
-                font = Night.ui(12)
-                foreground = Night.accent
-                isContentAreaFilled = false
-                border = BorderFactory.createEmptyBorder()
-                addActionListener { chooseFolder() }
-            })
+            for ((label, action) in listOf("Open a file…" to chooseFile, "Open a folder…" to chooseFolder)) {
+                add(JButton(label).apply {
+                    font = Night.ui(12)
+                    foreground = Night.accent
+                    isContentAreaFilled = false
+                    border = BorderFactory.createEmptyBorder(3, 0, 3, 0)
+                    addActionListener { action() }
+                })
+            }
         }
         explorerBody.add(hint, "hint")
         explorerBody.add(workbenchScroll(explorer, Night.panel), "tree")

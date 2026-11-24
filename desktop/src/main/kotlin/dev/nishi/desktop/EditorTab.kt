@@ -1,6 +1,7 @@
 package dev.nishi.desktop
 
 import dev.nishi.editor.EditorDocument
+import dev.nishi.editor.Language
 import dev.nishi.workspace.Draft
 import dev.nishi.workspace.Workspace
 import dev.nishi.workspace.WorkspaceFile
@@ -28,7 +29,7 @@ internal class EditorTab(
     private val untitledName: String,
     private val originalRoot: Path?,
     val homeWorkspace: Workspace? = null,
-    var binding: FileBinding? = null,
+    binding: FileBinding? = null,
     private val originalPath: String? = null,
     private val originalFingerprint: String? = null,
     val id: UUID = UUID.randomUUID(),
@@ -39,6 +40,17 @@ internal class EditorTab(
     private val undo = UndoManager()
     private var compoundEdit: CompoundEdit? = null
     private var appearance = EditorAppearance()
+    private val highlighting = SyntaxHighlighting(text, Language.fromFilename(binding?.file?.name ?: untitledName))
+    var languageOverride: Language? = null
+        set(value) {
+            field = value
+            updateLanguage()
+        }
+    var binding: FileBinding? = binding
+        set(value) {
+            field = value
+            updateLanguage()
+        }
     private val primary = makeArea()
     private var secondary: EditorSurface? = null
     var activeArea: JTextArea = primary
@@ -46,6 +58,7 @@ internal class EditorTab(
     var hasDiskConflict = false
 
     val nameForTab: String get() = binding?.file?.name ?: untitledName
+    val language: Language get() = highlighting.language
     val location: String?
         get() = binding?.let { "${it.workspace.name}/${it.file.relativePath}" } ?: originalPath
 
@@ -53,14 +66,14 @@ internal class EditorTab(
         text.insertString(0, state.snapshot().content.text, null)
         text.addUndoableEditListener { event -> (compoundEdit ?: undo).addEdit(event.edit) }
         text.addDocumentListener(object : DocumentListener {
-            override fun insertUpdate(event: DocumentEvent) = changed()
-            override fun removeUpdate(event: DocumentEvent) = changed()
-            override fun changedUpdate(event: DocumentEvent) = changed()
+            override fun insertUpdate(event: DocumentEvent) = changed(event)
+            override fun removeUpdate(event: DocumentEvent) = changed(event)
+            override fun changedUpdate(event: DocumentEvent) = changed(event)
 
-            private fun changed() {
+            private fun changed(event: DocumentEvent) {
+                highlighting.invalidate(event.offset)
                 state.replaceText(text.getText(0, text.length))
-                primary.editorChanged()
-                secondary?.editorChanged()
+                editorRepaint()
                 onEdit(this@EditorTab)
             }
         })
@@ -98,7 +111,7 @@ internal class EditorTab(
             if (width > 0) split.dividerLocation = (width - split.dividerSize) / 2
             activeArea = area
         } else {
-            other.document = PlainDocument()
+            other.detach()
             secondary = null
             add(primary.scroll, BorderLayout.CENTER)
             activeArea = primary
@@ -143,7 +156,17 @@ internal class EditorTab(
         content = snapshot.content,
     )
 
-    private fun makeArea(): EditorSurface = EditorSurface(text).apply {
+    private fun editorRepaint() {
+        primary.editorChanged()
+        secondary?.editorChanged()
+    }
+
+    private fun updateLanguage() {
+        highlighting.language = languageOverride ?: Language.fromFilename(nameForTab)
+        editorRepaint()
+    }
+
+    private fun makeArea(): EditorSurface = EditorSurface(text, highlighting).apply {
         applyAppearance(appearance)
         addFocusListener(object : FocusAdapter() {
             override fun focusGained(event: FocusEvent) {

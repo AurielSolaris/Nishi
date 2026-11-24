@@ -66,6 +66,9 @@ class Workspace private constructor(val root: Path) {
         return ReadFile(FileText.decode(text), fingerprint(bytes))
     }
 
+    internal fun containingDirectory(file: WorkspaceFile): Path =
+        resolve(file, allowMissing = true).parent?.takeIf { it.startsWith(root) } ?: root
+
     fun save(file: WorkspaceFile, content: FileText, expectedFingerprint: String?): String {
         val target = resolve(file, allowMissing = true)
         val bytes = content.format.encode(content.text).toByteArray(UTF_8)
