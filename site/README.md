@@ -1,6 +1,6 @@
 # Nishi website
 
-The marketing and documentation workbench uses Astro, TypeScript and SCSS. Run the following commands from `site/` with Node.js 22.12 or newer. Keep this directory in the Nishi checkout so the build can use the original desktop icon, Lucide icons, notices, and workbench screenshot.
+The marketing and documentation workbench uses Astro, TypeScript and SCSS. Run the following commands from `site/` with Node.js 22.23.4 or later in the 22.x line, or Node.js 24 or later. Keep this directory in the Nishi checkout so the build can use the original desktop icon, Lucide icons, notices, and workbench screenshot.
 
 ```sh
 npm ci
