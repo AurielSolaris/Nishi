@@ -1,0 +1,82 @@
+---
+import { Image } from 'astro:assets';
+import crescent from '../../../desktop/src/main/resources/dev/nishi/desktop/nishi.png';
+import Icon from '../components/Icon.astro';
+import FileList from '../components/FileList.astro';
+import { sitePath } from '../deployment.mjs';
+import { pages, errorPage, repository, type WorkbenchPage } from '../pages';
+import '../styles/workbench.scss';
+
+interface Props { page: WorkbenchPage }
+const { page } = Astro.props;
+const isHome = page.route === '/';
+const isError = page.route === errorPage.route;
+const title = isHome ? page.title : `${page.title} · Nishi`;
+const canonical = !isError && Astro.site ? new URL(sitePath(page.route), Astro.site) : undefined;
+const tabRoutes = ['/', '/docs/', '/download/'];
+const tabs = pages.filter((file) => tabRoutes.includes(file.route));
+if (!tabRoutes.includes(page.route)) tabs.unshift(page);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={page.description} />
+    <meta name="theme-color" content="#0b0f19" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={page.description} />
+    <meta property="og:type" content="website" />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {canonical && <meta property="og:url" content={canonical} />}
+    {isError && <meta name="robots" content="noindex" />}
+    <link rel="icon" href={crescent.src} type="image/png" />
+  </head>
+  <body>
+    <a class="skip" href="#main-content">Skip to content</a>
+    <header class="titlebar">
+      <a class="brand" href={sitePath('/')}>
+        <Image src={crescent} width={28} height={28} alt="" format="png" />
+        <span>Nishi</span>
+      </a>
+      <span class="window-title" aria-hidden="true">{page.filename} — Nishi</span>
+      <a class="repo" href={repository}><Icon name="file-code" /> GitHub repository</a>
+    </header>
+    <div class="workbench">
+      <aside class="sidebar">
+        <div class="activity-rail" aria-hidden="true"><Icon name="folder-tree" /></div>
+        <div class="desktop-explorer">
+          <div class="explorer-title">Explorer</div>
+          <FileList current={page} />
+        </div>
+      </aside>
+      <details class="mobile-explorer">
+        <summary><Icon name="folder-tree" /> Explorer</summary>
+        <FileList current={page} />
+      </details>
+      <div class="editor">
+        <nav class="tab-strip" aria-label="Page tabs">
+          {tabs.map((tab) => (
+            <a href={sitePath(tab.route)} aria-current={tab.route === page.route ? 'page' : undefined}>
+              <Icon name={tab.icon} />
+              {tab.filename}
+            </a>
+          ))}
+        </nav>
+        <main id="main-content" tabindex="-1" class:list={['document', { home: isHome }]}>
+          <div class="breadcrumb" aria-hidden="true">
+            <Icon name="folder" /> nishi <Icon name="chevron-right" /> <span>{page.filename}</span>
+          </div>
+          <article><slot /></article>
+        </main>
+      </div>
+    </div>
+    <footer class="statusbar">
+      <span class="status-project"><Icon name="folder-open" /> Nishi</span>
+      <span class="status-file">{page.filename}</span>
+      <span class="status-language">{page.language}</span>
+      <span>UTF-8</span>
+    </footer>
+  </body>
+</html>

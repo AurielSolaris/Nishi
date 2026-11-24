@@ -1,0 +1,12 @@
+---
+interface Props { name: string; class?: string }
+
+const { name, class: className } = Astro.props;
+const icons = import.meta.glob<string>(
+  '../../../desktop/src/main/resources/dev/nishi/desktop/icons/*.svg',
+  { query: '?raw', import: 'default', eager: true },
+);
+const svg = icons[`../../../desktop/src/main/resources/dev/nishi/desktop/icons/${name}.svg`];
+if (!svg) throw new Error(`Missing desktop icon: ${name}`);
+---
+<span class:list={['icon', className]} aria-hidden="true" set:html={svg} />

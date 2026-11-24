@@ -1,0 +1,13 @@
+---
+import type { GetStaticPaths } from 'astro';
+import Document from '../components/Document.astro';
+import { pages } from '../pages';
+
+export const getStaticPaths = (() => pages.map((page) => ({
+  params: { route: page.route.slice(1, -1) || undefined },
+  props: { page },
+}))) satisfies GetStaticPaths;
+
+const { page } = Astro.props;
+---
+<Document page={page} />

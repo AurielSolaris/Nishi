@@ -1,0 +1,13 @@
+---
+import type { MarkdownInstance } from 'astro';
+import Workbench from '../layouts/Workbench.astro';
+import type { WorkbenchPage } from '../pages';
+
+interface Props { page: WorkbenchPage }
+const { page } = Astro.props;
+const content = import.meta.glob<MarkdownInstance<Record<string, never>>>('../content/*.md', { eager: true });
+const entry = content[`../content/${page.content}`];
+if (!entry) throw new Error(`Missing Markdown content: ${page.content}`);
+const { Content } = entry;
+---
+<Workbench page={page}><Content /></Workbench>

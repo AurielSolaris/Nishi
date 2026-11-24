@@ -1,0 +1,21 @@
+---
+import Icon from './Icon.astro';
+import { pages, type WorkbenchPage } from '../pages';
+import { sitePath } from '../deployment.mjs';
+
+interface Props { current: WorkbenchPage }
+const { current } = Astro.props;
+---
+<nav aria-label="File explorer">
+  <div class="folder"><Icon name="chevron-down" /><Icon name="folder-open" /> NISHI</div>
+  <ul class="files">
+    {pages.toSorted((a, b) => a.order - b.order).map((file) => (
+      <li>
+        <a href={sitePath(file.route)} aria-current={file.route === current.route ? 'page' : undefined}>
+          <Icon name={file.icon} />
+          <span>{file.filename}</span>
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>
